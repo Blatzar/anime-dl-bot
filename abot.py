@@ -5,9 +5,9 @@ import json
 from anime_downloader.sites import get_anime_class
 
 try:
-	import testkeys 
-	testkey = testkeys.token() 
-	token = testkey.anime 
+	import testkeys
+	testkey = testkeys.token()
+	token = testkey.anime
 except:
 	token = ''
 
@@ -48,11 +48,11 @@ def Message(message,prefix): #0 is True/False, 1 is the string after
 
 @bot.event
 async def on_message(message):
-	
+
 	search = Message(message,'a ')
 	select = Message(message,'s ')
 	episode = Message(message,'e ')
-	
+
 	#search
 	if search[0]:
 		print(search[1])
@@ -67,7 +67,7 @@ async def on_message(message):
 			})
 		Write(f)
 		await message.channel.send(results)
-	
+
 	#select
 	if select[0]:
 		f = Load()
@@ -97,12 +97,12 @@ async def on_message(message):
 					results = f'{results}\n{str(a["data"][b]["title"])}'
 				results += '```'
 				await message.channel.send(results)
-	#change episode	
+	#change episode
 	if episode[0]:
 		f = Load()
 		if Int(episode[1]):
 			for a in f:
-				if a['user'] == message.author.id: 
+				if a['user'] == message.author.id:
 					a["episode"] = int(episode[1])-1
 					Write(f)
 					await message.channel.send(f'Selected episode {episode[1]}')
