@@ -234,6 +234,7 @@ async def episode(ctx, number):
                 user["episode"] = int(number)-1
                 Write(f,anime_config)
                 Provider = get_anime_class(f[str_id].get("provider",default_provider))
+                print(user["select"]["url"])
                 await ctx.send(f'Selected episode {number}')
                 try:
                     print(user["select"]["url"])
