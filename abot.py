@@ -25,14 +25,14 @@ anime_config = os.path.expanduser('~/keep/anime.json')
 guild_config = os.path.expanduser('~/keep/config.json')
 default_provider = 'animepahe'
 
+embed_name = 'Search query:'
+
 def get_prefix(client, message, path = guild_config, change = {}):
     prefix = 'a!'
     guild_id = str(message.guild.id) if message.guild else str(message.channel.id)
     blank_guild = {
-        "prefix":"!"
+        "prefix":"a!"
     }
-    if message.content.startswith('a!help'): #In case the prefix is forgotten a!help always works
-        return 'a!'
 
     if os.path.exists(path):
         data = Load(path)
@@ -59,7 +59,6 @@ client = commands.Bot(command_prefix = get_prefix)
 #client.remove_command('help')
 def run_bot(client):
     client.run(token)
-
 
 def Int(number): #Can it be converted to int
     try:
@@ -99,21 +98,20 @@ def Load(path,default=False): #All user info in anime.json
 
 def Search(query,Provider):
     Provider = get_anime_class(Provider)
-    results = '```'
+    results = ''
+    #results = '```'
     print(f'Query: {query}')
     search = Provider.search(query)
     for a in range(len(search)):
         """discord limit of 2000 chars, should ideally split the messages"""
         if len(f'{results}\n{str(search[a])}')+3 < 1999: 
             results = f'{results}\n{a+1}: {str(search[a])}'
-    results += '```'
-    print(results)
+    #results += '```'
     return(results,search)
 
 client.remove_command('help')
 @client.command(pass_context=True)
 async def help(ctx):
-    ctx.message.content = 'test' #To bypass all prefix exceptions
     prefix = get_prefix(client, ctx.message)
     embed = discord.Embed(color=0xafb6c5)
     embed.set_author(name=f'Prefix: "{prefix}"')
@@ -193,34 +191,44 @@ async def search(ctx, *, query):
         Write(f,anime_config)
         if not len(results):
              await ctx.send('No results found')
-        await ctx.send(results)
+        
+        embed = discord.Embed(color=0xafb6c5)
+        embed.set_author(name=f'{embed_name} {query}')
+        embed.description = results
+        await ctx.send(embed=embed)
+
+        #await ctx.send(results)
 
 
 @client.command(aliases=['s'])
 async def select(ctx, number):
     async with ctx.typing():
         str_id = str(ctx.author.id)
-        f = Load(anime_config)
-        if str_id in f and Int(number):
-            Provider = get_anime_class(f[str_id].get("provider",default_provider))
-            user = f[str_id]
-            number = int(number) - 1 #Starts from 1
-            await ctx.send('Selected: ' + user["data"][number]["title"] + f' - **Episode: {user["episode"]+1}**')
-            user["select"]["url"],user["select"]["title"] = user["data"][number]["url"],user["data"][number]["title"]
-            Write(f, anime_config)
-            try:
-                anime = Provider(user["data"][number]["url"])
-                embed = discord.Embed(
-                    title = user["data"][number]["title"]+f' - Episode {user["episode"]+1}/{len(anime)}',
-                    url = anime[user["episode"]].source().stream_url
-                )
-            except:
-                await ctx.send('Error selecting episode')
-            
-            try: #Fix embed here
-                await ctx.send(embed=embed)
-            except:
-                await ctx.send(anime[user["episode"]].source().stream_url)
+        await _select(ctx.message,str_id,number)
+
+
+async def _select(message,str_id,number):
+    f = Load(anime_config)
+    if str_id in f and Int(number):
+        Provider = get_anime_class(f[str_id].get("provider",default_provider))
+        user = f[str_id]
+        number = int(number) - 1 #Starts from 1
+        await message.channel.send('Selected: ' + user["data"][number]["title"] + f' - **Episode: {user["episode"]+1}**')
+        user["select"]["url"],user["select"]["title"] = user["data"][number]["url"],user["data"][number]["title"]
+        Write(f, anime_config)
+        try:
+            anime = Provider(user["data"][number]["url"])
+            embed = discord.Embed(
+                title = user["data"][number]["title"]+f' - Episode {user["episode"]+1}/{len(anime)}',
+                url = anime[user["episode"]].source().stream_url
+            )
+        except:
+            await message.channel.send('Error selecting episode')
+
+        try: #Fix embed here
+            await message.channel.send(embed=embed)
+        except:
+            await message.channel.send(anime[user["episode"]].source().stream_url)
 
 
 @client.command(aliases=['e'])
@@ -269,7 +277,44 @@ async def run(ctx, *, query):
 
 
 @client.event
+async def on_message(message):
+    if message.author == client.user:
+        if message.embeds:
+            title = message.embeds[0].author.name
+            if title:
+                if title.startswith(embed_name):
+                    description = message.embeds[0].description.split('\n')
+                    lastnum = description[-1][:description[-1].find(':')] #Gets lastnum based on the location of :
+                    lastnum = 10 if int(lastnum) > 10 else int(lastnum) 
+                    for i in range(1,lastnum+1):
+                        await message.add_reaction(f"{str(i)}\N{combining enclosing keycap}")
+        return
+    if client.user in message.mentions:
+        prefix = get_prefix(client, message)
+        await message.channel.send(f'My prefix is: "{prefix}"')
+    await client.process_commands(message)
+
+@client.event
+async def on_reaction_add(reaction, user):
+    message = reaction.message
+    users = await reaction.users().flatten()
+    if message.author == client.user and user != client.user:
+        if message.embeds:
+            title = message.embeds[0].author.name
+            if title.startswith(embed_name):
+                if Int(str(reaction)[:-1]):
+                    await _select(message,str(user.id),int(str(reaction)[:-1]))
+    """
+    async for user in reaction.users():
+        await message.channel.send('{0} has reacted with {1}!'.format(user, reaction.emoji))
+        print(reaction.emoji)
+        for a in get_numbers():
+            await message.add_reaction(emoji=a)
+    """
+
+@client.event
 async def on_ready():
+    #print(get_numbers())
     #game = discord.Game("with ur mom")
     #await bot.change_presence(status=discord.Status.idle, activity=game)
     print(str(client.user.name) + ' has connected to Discord!')
