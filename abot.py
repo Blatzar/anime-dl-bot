@@ -6,6 +6,7 @@ import discord
 import time
 import json
 import os
+import sys
 import subprocess
 
 try:
@@ -18,10 +19,47 @@ except:
 """discord id for the bot owner, change this!!!"""
 owner = 200993688527175681 
 
-bot = commands.Bot(command_prefix='')
-users = os.path.expanduser('~/keep/anime.json')
-config = os.path.expanduser('~/keep/config.json')
+#bot = commands.Bot(command_prefix='')
+
+anime_config = os.path.expanduser('~/keep/anime.json')
+guild_config = os.path.expanduser('~/keep/config.json')
 default_provider = 'animepahe'
+
+def get_prefix(client, message, path = guild_config, change = {}):
+    prefix = 'a!'
+    guild_id = str(message.guild.id) if message.guild else str(message.channel.id)
+    blank_guild = {
+        "prefix":"!"
+    }
+    if message.content.startswith('a!help'): #In case the prefix is forgotten a!help always works
+        return 'a!'
+
+    if os.path.exists(path):
+        data = Load(path)
+        guilds = data['guilds']
+        if not guild_id in guilds:
+            guilds[guild_id] = blank_guild
+            data['guilds'] = guilds
+            Write(data,path)
+        
+        if change:
+            for a in change:
+                guilds[guild_id][a] = change[a]
+            data['guilds'] = guilds
+            Write(data,path)
+
+        prefix = guilds[guild_id].get('prefix',prefix)
+
+    else:
+        print(f'file: "{path}" not found, can not load')
+
+    return prefix
+
+client = commands.Bot(command_prefix = get_prefix)
+#client.remove_command('help')
+def run_bot(client):
+    client.run(token)
+
 
 def Int(number): #Can it be converted to int
     try:
@@ -31,228 +69,33 @@ def Int(number): #Can it be converted to int
         return(False)
 
 
-def Write(f, path = users):
+async def sendPM(ID,message):
+    if ID != client.user.id:
+        await (client.get_user(ID)).send(message)
+
+
+def Write(data, path):
+    print('Write')
     if os.path.exists(path):
-        f = str(f).replace("'",'"')
-        _file = open(path, "w")
-        _file.write(f)
-        _file.close()
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=4)
         return True
     else:
         print(f'file: "{path}" not found, not writing')
         return False
 
 
-def Load(path = users,default=False): #All user info in anime.json
+def Load(path,default=False): #All user info in anime.json
     if os.path.exists(path):
         try:
-            f = json.loads(open(path).read())
-            return f
+            with open(path, 'r') as f:
+                return json.load(f)
         except:
             print(f'Json decode error')
             return default
     else:
         print(f'file: "{path}" not found, can not load')
         return default
-
-
-def load_guild(guild_id, path = config, change={}):
-    blank_guild = {
-        "prefix":"!"
-    }
-    guild_id = str(guild_id)
-    if os.path.exists(path):
-        data = Load(path)
-        guilds = data['guilds']
-        
-        if not guild_id in guilds:
-            guilds[guild_id] = blank_guild
-            data['guilds'] = guilds
-            Write(data,path)    
-        
-        if change:
-            for a in change:
-                guilds[guild_id][a] = change[a]
-            data['guilds'] = guilds
-            Write(data,path)
-
-        return guilds[guild_id]
-    else:
-        print(f'file: "{path}" not found, can not load')
-        return blank_guild
-
-
-#send a pm with a discord ID
-async def sendPM(ID,message):
-    if ID != bot:
-        await (bot.get_user(ID)).send(message)
-
-
-#get the name with a discord ID
-async def GetUserName(ID):
-    if ID != bot:
-        name = bot.get_user(ID)
-        return(str(name.name))
-
-
-def Message(message, prefix, user_input = True): #0 is True/False, 1 is the string after
-    return [message.content[:len(prefix)] == prefix and (len(message.content) > len(prefix) or not user_input),message.content[len(prefix):]]
-
-
-@bot.event
-async def on_message(message):
-    if message.author.id != bot.user.id:
-        str_id = str(message.author.id)
-        guild_id = message.guild.id if message.guild else message.channel.id
-        guild_config = load_guild(guild_id)
-        prefix = guild_config['prefix']
-
-        """
-        variable abuse, but I see no better way
-        a for loop + dict would be nice
-        """
-        search = Message(message,f'{prefix}a ')
-        select = Message(message,f'{prefix}s ')
-        episode = Message(message,f'{prefix}e ')
-        select_provider = Message(message,f'{prefix}p ')
-        read_prefix = Message(message,f'!read prefix',False)
-        set_prefix = Message(message,f'!set prefix ')
-        list_search = Message(message,f'{prefix}l',False)
-
-        if read_prefix[0]:
-            async with message.channel.typing():
-                await message.channel.send(f'The current prefix is "{prefix}"\nSet the prefix with: "!set prefix *prefix*"')
-
-        if set_prefix[0]:
-            async with message.channel.typing():
-                load_guild(guild_id, config, {'prefix':set_prefix[1]})
-                await  message.channel.send(f'Changed prefix to "{set_prefix[1]}"')
-
-        #search
-        if search[0]:
-            async with message.channel.typing():
-                print(search[1])
-                f = Load()
-                provider = f[str_id].get('provider',default_provider) if str_id in f else default_provider
-                results, results_list = Search(search[1],provider)
-                
-                f[str_id] = {
-                    "provider":provider,
-                    "select":{"url":"","title":""},
-                    "episode":0,
-                    "data":[{"url":a.url,"title":a.title.replace("'",'').replace('"','')} for a in results_list]
-                    }
-
-                Write(f)
-                if not len(results):
-                     await message.channel.send('No results found')
-                await message.channel.send(results)
-                """
-                except:
-                    await message.channel.send('Errors when searching')
-                """
-        if select_provider[0]:
-            f = Load()
-            if str_id in f:
-                if get_anime_class(select_provider[1]):
-                    f[str_id]['provider'] = select_provider[1]
-                    Write(f)
-                    await message.channel.send(f'Selected provider "{select_provider[1]}"')
-                else:
-                    await message.channel.send(f'Invalid provider, choose from: {[a[0] for a in ALL_ANIME_SITES]}')
-            else:
-                f[str_id] = {
-                    "provider":select_provider[1]
-                }
-
-        #select
-        if select[0]:
-            async with message.channel.typing():
-                f = Load()
-                if str_id in f and Int(select[1]):
-                    Provider = get_anime_class(f[str_id].get("provider",default_provider))
-                    user = f[str_id]
-                    select[1] = int(select[1]) - 1 #Starts from 1
-                    await message.channel.send('Selected: ' + user["data"][select[1]]["title"] + f' - **Episode: {user["episode"]+1}**')
-                    user["select"]["url"],user["select"]["title"] = user["data"][select[1]]["url"],user["data"][select[1]]["title"]
-                    Write(f)
-                    try:
-                        anime = Provider(user["data"][select[1]]["url"])
-                        embed = discord.Embed(
-                            title = user["data"][select[1]]["title"]+f' - Episode {user["episode"]+1}/{len(anime)}',
-                            url = anime[user["episode"]].source().stream_url
-                        )
-                    except:
-                        await message.channel.send('Error selecting episode')
-                    
-                    try: #Fix embed here
-                        await message.channel.send(embed=embed)
-                    except:
-                        await message.channel.send(anime[user["episode"]].source().stream_url)
-
-        #list
-        if list_search[0]:
-            async with message.channel.typing():
-                f = Load()
-                if str_id in f:
-                    results = '```'
-                    for b in range(len(f[str_id]["data"])):
-                        results = f'{results}\n{str(f[str_id]["data"][b]["title"])}'
-                    results += '```'
-                    await message.channel.send(results)
-        
-
-        #change episode 
-        if episode[0]:
-            async with message.channel.typing():
-                f = Load()
-                if Int(episode[1]):
-                    if str_id in f:
-                        user = f[str_id]
-                        user["episode"] = int(episode[1])-1
-                        Write(f)
-
-                        await message.channel.send(f'Selected episode {episode[1]}')
-                        try:
-                            print(user["select"]["url"])
-                            anime = Provider(user["select"]["url"])
-                            embed = discord.Embed(
-                            title = user["select"]["title"]+f' - Episode {user["episode"]+1}/{len(anime)}',
-                            url = anime[user["episode"]].source().stream_url
-                            )
-                        except:
-                            await message.channel.send('Error selecting episode')
-                        try:
-                            await message.channel.send(embed=embed)
-                        except:
-                            await message.channel.send(anime[user["episode"]].source().stream_url)
-
-        if message.content == f'{prefix}ping':
-            await message.channel.send(f'Pong! {round(bot.latency * 1000)}ms')
-
-        if message.content == '!help':
-            await message.channel.send(f'**Current prefix:** "{prefix}"\n`!set prefix`*`prefix`* to set prefix\n`!read prefix` to get current prefix\n\n`{prefix}a` *`anime`* to search\n`{prefix}s` *`number`* to select anime\n`{prefix}e` *`number`* to select episode\n`{prefix}l` to list search')
-
-        if message.author.id == owner:
-            if message.content == ('!anime update git'):
-                os.system('pip install --upgrade --force-reinstall git+https://github.com/vn-ki/anime-downloader')
-                await message.channel.send('GIT: '+os.popen('anime --version').read())
-            if message.content == ('!anime update pip'):
-                os.system('pip install --upgrade --force-reinstall anime-downloader')
-                await message.channel.send('PIP: '+os.popen('anime --version').read())
-
-        #To allow shell commands from discord, security risk
-        if message.content.startswith('?') and message.author.id == owner:
-            command = message.content[1:] if not ('anime' in message.content and '-c' not in message.content) else 'yes "1" | '  + message.content[1:]
-            print(command)
-            #command = command.split()
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
-            output, error = process.communicate()
-            output = output.decode('UTF-8')
-            print(output,error)
-            if len(output) != 0:
-                for a in range(0,int(round((len(output)/2000),0)+1)):
-                    await message.channel.send(output[a*1999:(a+1)*1999])
 
 def Search(query,Provider):
     Provider = get_anime_class(Provider)
@@ -267,11 +110,167 @@ def Search(query,Provider):
     print(results)
     return(results,search)
 
+client.remove_command('help')
+@client.command(pass_context=True)
+async def help(ctx):
+    ctx.message.content = 'test' #To bypass all prefix exceptions
+    prefix = get_prefix(client, ctx.message)
+    embed = discord.Embed(color=0xafb6c5)
+    embed.set_author(name=f'Prefix: "{prefix}"')
+    embed.add_field(inline=False, name='ping', value='Returns the ping of the bot.')
+    embed.add_field(inline=False, name='help', value='Lists all the available commands the bot offers.\na!help works regardless of prefix')
+    embed.add_field(inline=False, name='set prefix', value='Set prefix to chosen string, admin permissions needed')
+    embed.add_field(inline=False, name='search, a, anime', value='Search for a show')
+    embed.add_field(inline=False, name='select, s', value='Select a result from search')
+    embed.add_field(inline=False, name='episode, e', value='Select an episode')
+    embed.add_field(inline=False, name='provider, p', value='Select provider')
+    await ctx.message.channel.send(embed=embed)
+    #  f'**Current prefix:** "{prefix}"\n`!set prefix`*`prefix`* to set prefix\n`!read prefix` to get current prefix\n\n`{prefix}a` *`anime`* to search\n`{prefix}s` *`number`* to select anime\n`{prefix}e` *`number`* to select episode\n`{prefix}l` to list search')
 
-@bot.event
+
+@client.command(aliases=['exit'])
+async def shutdown(ctx):
+    if str(ctx.message.author.id) == str(owner):
+        await ctx.send('The bot is exiting.')
+        time.sleep(2)
+        sys.exit(0)
+    else:
+        await ctx.send('You are not allowed to use this command.')
+
+
+@client.command()
+async def ping(ctx):
+    await ctx.send(f'Pong! {round(client.latency * 1000)}ms')
+
+'''
+@client.command()
+async def read(ctx, query):
+    if query == 'prefix':
+        async with ctx.typing():
+            prefix = get_prefix(client,ctx.message)
+            await ctx.send(f'The current prefix is "{prefix}"\nSet the prefix with: "!set prefix *prefix*"')
+'''
+@client.command()
+async def set(ctx, query, prefix):
+    if query == 'prefix':
+        async with ctx.typing():
+            premission = ctx.message.author.server_permissions.administrator if ctx.message.guild else True
+            if premission:
+                get_prefix(client,ctx.message,guild_config,{"prefix":prefix})
+                await ctx.send(f'Changed prefix to "{prefix}"')
+            else:
+                ctx.send('Admin permissions needed to change prefix')
+
+
+@client.command(aliases=['p'])
+async def provider(ctx, provider):
+    async with ctx.typing():
+        f = Load(anime_config)
+        str_id = str(ctx.author.id)
+        if get_anime_class(provider):
+            f[str_id]['provider'] = provider
+            Write(f, anime_config)
+            await ctx.send(f'Selected provider "{provider}"')
+        else:
+            await ctx.send(f'Invalid provider, choose from: {[a[0] for a in ALL_ANIME_SITES]}')
+
+
+@client.command(aliases=['a','anime'])
+async def search(ctx, *, query):
+    async with ctx.typing():
+        str_id = str(ctx.author.id)
+        f = Load(anime_config)
+        provider = f[str_id].get('provider',default_provider) if str_id in f else default_provider
+        results, results_list = Search(query,provider)
+        
+        f[str_id] = {
+            "provider":provider,
+            "select":{"url":"","title":""},
+            "episode":0,
+            "data":[{"url":a.url,"title":a.title.replace("'",'').replace('"','')} for a in results_list]
+            }
+
+        Write(f,anime_config)
+        if not len(results):
+             await ctx.send('No results found')
+        await ctx.send(results)
+
+
+@client.command(aliases=['s'])
+async def select(ctx, number):
+    async with ctx.typing():
+        str_id = str(ctx.author.id)
+        f = Load(anime_config)
+        if str_id in f and Int(number):
+            Provider = get_anime_class(f[str_id].get("provider",default_provider))
+            user = f[str_id]
+            number = int(number) - 1 #Starts from 1
+            await ctx.send('Selected: ' + user["data"][number]["title"] + f' - **Episode: {user["episode"]+1}**')
+            user["select"]["url"],user["select"]["title"] = user["data"][number]["url"],user["data"][number]["title"]
+            Write(f, anime_config)
+            try:
+                anime = Provider(user["data"][number]["url"])
+                embed = discord.Embed(
+                    title = user["data"][number]["title"]+f' - Episode {user["episode"]+1}/{len(anime)}',
+                    url = anime[user["episode"]].source().stream_url
+                )
+            except:
+                await ctx.send('Error selecting episode')
+            
+            try: #Fix embed here
+                await ctx.send(embed=embed)
+            except:
+                await ctx.send(anime[user["episode"]].source().stream_url)
+
+
+@client.command(aliases=['e'])
+async def episode(ctx, number):
+    async with ctx.typing():
+        str_id = str(ctx.author.id)
+        f = Load(anime_config)
+        if Int(number):
+            if str_id in f:
+                user = f[str_id]
+                user["episode"] = int(number)-1
+                Write(f,anime_config)
+                Provider = get_anime_class(f[str_id].get("provider",default_provider))
+                await ctx.send(f'Selected episode {number}')
+                try:
+                    print(user["select"]["url"])
+                    anime = Provider(user["select"]["url"])
+                    embed = discord.Embed(
+                    title = user["select"]["title"]+f' - Episode {user["episode"]+1}/{len(anime)}',
+                    url = anime[user["episode"]].source().stream_url
+                    )
+                except:
+                    await ctx.send('Error selecting episode')
+                try:
+                    await ctx.send(embed=embed)
+                except:
+                    await ctx.send(anime[user["episode"]].source().stream_url)
+        else:
+            await ctx.send(f'Invalid number: "{number}"')
+
+
+@client.command()
+async def run(ctx, *, query):
+    if ctx.message.author.id == owner: #Important!
+        command = query if not ('anime' in query and '-c' not in message.content) else 'yes "1" | '  + query
+        print(command)
+        #command = command.split()
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+        output, error = process.communicate()
+        output = output.decode('UTF-8')
+        print(output,error)
+        if len(output) != 0:
+            for a in range(0,int(round((len(output)/2000),0)+1)):
+                await ctx.send(output[a*1999:(a+1)*1999])
+
+
+@client.event
 async def on_ready():
     #game = discord.Game("with ur mom")
     #await bot.change_presence(status=discord.Status.idle, activity=game)
-    print(str(bot.user.name) + ' has connected to Discord!')
+    print(str(client.user.name) + ' has connected to Discord!')
 
-bot.run(token)
+run_bot(client)
